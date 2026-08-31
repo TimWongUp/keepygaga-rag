@@ -1,0 +1,458 @@
+{% extends "base.html" %}
+{% from "_i18n.html" import t with context %}
+{% macro scope_picker(scope) %}
+<div class="scope-picker" data-scope-picker>
+  <input type="hidden" name="scope_selection" value='{{ scope.selection | tojson }}' data-scope-selection>
+  <div class="scope-picker-heading">
+    <span>
+      <strong>{{ t('选择生效范围', 'Choose active scope') }}</strong>
+      <small><b data-scope-count>{{ scope.selected_files }}</b> / {{ scope.total_files }} {{ t('个文件生效', 'files active') }}</small>
+    </span>
+    <span class="scope-picker-tools">
+      <button type="button" data-scope-all>{{ t('全部', 'All') }}</button>
+      <button type="button" data-scope-none>{{ t('清空', 'None') }}</button>
+    </span>
+  </div>
+  <label class="scope-filter">
+    <span>{{ t('筛选', 'Filter') }}</span>
+    <input type="search" placeholder="{{ t('输入文件夹或文件名', 'Folder or file name') }}" data-scope-filter>
+  </label>
+  <div class="scope-tree" data-scope-tree>
+    {% for item in scope['items'] %}
+    <div class="scope-node scope-node-{{ item.kind }}" style="--scope-depth: {{ item.depth }}" data-scope-row data-scope-kind="{{ item.kind }}" data-scope-path="{{ item.path }}" data-scope-search="{{ item.path | lower }}" {% if item.depth > 0 %}hidden{% endif %}>
+      <label class="scope-node-check" title="{{ t('选择此范围', 'Select this scope') }}">
+        <input type="checkbox" value="{{ item.path }}" aria-label="{{ t('选择', 'Select') }} {{ item.name }}" data-scope-node data-scope-kind="{{ item.kind }}" data-scope-path="{{ item.path }}" data-scope-state="{{ item.state }}" {% if item.state == 'full' %}checked{% endif %}>
+      </label>
+      {% if item.kind == 'directory' %}
+      <button type="button" class="scope-node-main" aria-expanded="false" aria-label="{{ t('展开目录', 'Expand directory') }}" data-scope-toggle>
+        <i aria-hidden="true" data-scope-toggle-icon>▸</i>
+        <span title="{{ item.path }}">{{ item.name }}</span>
+      </button>
+      {% else %}
+      <span class="scope-node-main scope-node-main-file">
+        <i aria-hidden="true">·</i>
+        <span title="{{ item.path }}">{{ item.name }}</span>
+      </span>
+      {% endif %}
+      {% if item.kind == 'directory' %}<small>{{ item.files }} {{ t('文件', 'files') }}</small>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% if scope.error %}<p class="scope-note">{{ scope.error }}</p>{% endif %}
+  <p class="scope-note">{{ t('隐藏文件、隐藏目录、核心记忆和开发依赖始终排除。勾选整个文件夹后，今后新增的 Markdown / TXT 也会自动生效。', 'Hidden files, hidden folders, core memory and development dependencies are always excluded. Selecting a folder also includes future Markdown / TXT files within it.') }}</p>
+</div>
+{% endmacro %}
+{% block title %}{{ t('本地知识库', 'Local knowledge') }} · Keepygaga RAG{% endblock %}
+{% block content %}
+<section class="page-heading knowledge-heading reveal">
+  <div>
+    <p class="eyebrow"><span>INDEX OBSERVATORY</span> / {{ t('索引观测台', 'LOCAL KNOWLEDGE') }}</p>
+    <h1>{{ t('让散落的文字，', 'Give scattered words') }}<br><em>{{ t('拥有可追溯的坐标。', 'a traceable coordinate.') }}</em></h1>
+    <p class="lede">{{ t('原文件始终是真源。SQLite 保存正文、任务与代际，LanceDB 只保存向量；' ~ ('search 已接入这条混合检索链路。' if snapshot and snapshot.enabled else 'search 当前不可用，因为知识库已停用。'), 'Original files remain the source of truth. SQLite holds text, jobs and generations; LanceDB holds vectors only; ' ~ ('search uses this hybrid retrieval path.' if snapshot and snapshot.enabled else 'search is unavailable because the backend is disabled.')) }}</p>
+  </div>
+  {% if snapshot %}
+  <div class="index-seal {{ 'is-live' if snapshot.enabled else 'is-off' }}">
+    <span>{{ t('知识索引', 'KNOWLEDGE INDEX') }}</span>
+    <strong>{{ t('文字知识库', 'Text Knowledge') if snapshot.enabled else t('知识库已停用', 'Knowledge disabled') }}</strong>
+    <small>{{ t('混合检索 · MCP 已接入', 'Hybrid search · MCP connected') if snapshot.enabled else t('knowledge.enabled=false；search 当前不可用', 'knowledge.enabled=false; search is unavailable') }}</small>
+  </div>
+  {% endif %}
+</section>
+
+{% if message == 'source-added' %}<div class="notice success reveal">{{ t('数据源已登记。确认预览后可手动开始第一次同步。', 'Source registered. Start its first sync when ready.') }}</div>{% endif %}
+{% if message == 'sync-queued' %}<div class="notice success reveal">{{ t('同步任务已进入单写队列。', 'The sync job is queued for the single writer.') }}</div>{% endif %}
+{% if message == 'retry-queued' %}<div class="notice success reveal">{{ t('失败文件所属数据源已重新进入单写队列。', 'The failed file source has been requeued for the single writer.') }}</div>{% endif %}
+{% if message == 'source-removed' %}<div class="notice success reveal">{{ t('数据源及其可重建索引已移除，原文件没有改动。', 'The source and rebuildable index were removed. Original files were untouched.') }}</div>{% endif %}
+{% if message == 'consent-renewed' %}<div class="notice success reveal">{{ t('新的 Provider 与模型范围已获得确认。', 'Consent was renewed for the new provider and model scope.') }}</div>{% endif %}
+{% if message == 'scope-updated' %}<div class="notice success reveal">{{ t('生效范围已更新。为防止扩大范围后意外发送正文，请重新确认在线模型授权。', 'The active scope was updated. Renew provider consent before indexing the changed scope.') }}</div>{% endif %}
+{% if message == 'retrieval-settings-updated' %}<div class="notice success reveal">{{ t('检索设置已保存，后续查询立即生效，不需要重启 Agent。', 'Retrieval settings are saved and active for subsequent queries; the Agent does not need to restart.') }}</div>{% endif %}
+{% if message == 'indexer-restarted' %}<div class="notice success reveal">{{ t('Indexer 已请求重启；索引协调器将由 launchd 重新拉起。', 'Indexer restart requested; launchd will start the coordinator again.') }}</div>{% endif %}
+{% if message == 'chunk-settings-updated' and rebuild_result %}
+<div class="notice success reveal">
+  {% if rebuild_result.changed %}
+  {{ t('文字分块设置已保存，不需要重启 Agent。', 'Text chunk settings saved; the Agent does not need to restart.') }} {{ rebuild_result.marked_files }} {{ t('个已有文件已标记重新切块，', 'existing files were marked for rechunking, and') }} {{ rebuild_result.queued_sources }} {{ t('个数据源已进入单写队列。', 'sources entered the single-writer queue.') }}
+  {% if rebuild_result.deferred_sources %}{{ rebuild_result.deferred_sources }} {{ t('个数据源因停用、授权过期、范围清理或路径不可安全读取而暂缓。', 'sources were deferred because they are disabled, have stale consent, await scope cleanup, or cannot be read safely.') }}{% endif %}
+  {% else %}
+  {{ t('当前值没有变化，无需重建现有分块。', 'The values are unchanged; existing chunks do not need rebuilding.') }}
+  {% endif %}
+</div>
+{% endif %}
+{% if error %}<div class="notice error reveal">{{ error }}</div>{% endif %}
+
+{% if snapshot %}
+{% set current_chunk_target = chunk_form.chunk_target_chars if chunk_form else snapshot.chunk_target_chars %}
+{% set current_chunk_max = chunk_form.chunk_max_chars if chunk_form else snapshot.chunk_max_chars %}
+{% set current_chunk_mode = chunk_form.chunk_mode if chunk_form else snapshot.chunk_mode %}
+{% set current_chunk_overlap = chunk_form.chunk_overlap_chars if chunk_form else snapshot.chunk_overlap_chars %}
+{% set current_vector_recall = retrieval_form.vector_recall_limit if retrieval_form else snapshot.vector_recall_limit %}
+{% set current_keyword_recall = retrieval_form.keyword_recall_limit if retrieval_form else snapshot.keyword_recall_limit %}
+{% set current_rerank_candidates = retrieval_form.rerank_candidate_limit if retrieval_form else snapshot.rerank_candidate_limit %}
+{% set current_max_chunks = retrieval_form.max_chunks_per_source_file if retrieval_form else snapshot.max_chunks_per_source_file %}
+{% set current_chunk_mode_label = t('结构优先', 'Structure-first') if current_chunk_mode == 'structure' else t('字数优先', 'Length-first') %}
+{% set chunk_overlap_disabled = current_chunk_overlap | string == '0' %}
+<section class="chunk-settings reveal delay-1">
+  <div class="chunk-settings-copy">
+    <p class="eyebrow"><span>{{ t('分块方案', 'CHUNK PROFILE') }}</span> / {{ t('文字切块', 'TEXT CHUNKING') }}</p>
+    <h2>{{ t('文字分块设置', 'Text chunk settings') }}</h2>
+    <p class="chunk-settings-description">{{ t('优先保留标题和段落；只有超长内容才按标点或字符上限拆分。', 'Preserve headings and paragraphs first; only oversized content is split at punctuation or the character limit.') }}</p>
+    <div class="chunk-current-strip" aria-label="{{ t('当前生效设置', 'Current effective settings') }}">
+      <span><small>{{ t('当前模式', 'Mode') }}</small><strong>{{ current_chunk_mode_label }}</strong></span>
+      <span><small>{{ t('目标字符数', 'Target') }}</small><strong>{{ current_chunk_target }} {{ t('字符', 'chars') }}</strong></span>
+      <span><small>{{ t('最大字符数', 'Maximum') }}</small><strong>{{ current_chunk_max }} {{ t('字符', 'chars') }}</strong></span>
+      <span><small>{{ t('重叠字符数', 'Overlap') }}</small><strong>{{ current_chunk_overlap }} {{ t('字符', 'chars') }}</strong></span>
+    </div>
+    <div class="chunk-rule-sheet">
+      <div class="chunk-rule-cards">
+        <article><strong>{{ t('结构优先', 'Structure-first') }}</strong><span>{{ t('标题不跨分块，段落尽量完整。', 'Headings never cross chunks; paragraphs stay intact when possible.') }}</span></article>
+        <article><strong>{{ t('字数优先', 'Length-first') }}</strong><span>{{ t('接近目标字数时，只在空行或标点处收束。', 'Near the target, close only at blank lines or punctuation.') }}</span></article>
+        <article><strong>{{ t('普通文本', 'Plain text') }}</strong><span>{{ t('无标题时按段落、标点处理，文件名作为标题。', 'Without headings, use paragraphs and punctuation; the filename becomes the title.') }}</span></article>
+      </div>
+      <details class="chunk-rule-details">
+        <summary>{{ t('查看完整切块规则', 'View complete chunking rules') }}</summary>
+        <ul>
+          <li>{{ t('结构优先：Markdown（标记文本）标题是固定边界，同一标题内按完整段落聚合。', 'Structure-first: Markdown headings are fixed boundaries, and complete paragraphs are grouped within each heading.') }}</li>
+          <li>{{ t('字数优先：接近目标字符数后，只在空行、句末或分句标点处切分。', 'Length-first: after approaching the target, split only at blank lines, sentence endings, or clause punctuation.') }}</li>
+          <li>{{ t('超长内容：单个句子超过最大字符数时，才按字符强制拆分。', 'Oversized content: force a character split only when one sentence exceeds the maximum.') }}</li>
+          <li>{{ t('重叠字符数为 ' ~ current_chunk_overlap ~ '；' ~ ('当前不复制内容。' if chunk_overlap_disabled else '仅在同一段落的长度拆分处生效。'), 'Overlap is ' ~ current_chunk_overlap ~ ' characters; ' ~ ('content is not duplicated.' if chunk_overlap_disabled else 'it applies only to length splits within the same paragraph.')) }}</li>
+        </ul>
+      </details>
+    </div>
+  </div>
+  <form class="chunk-settings-form" method="post" action="/knowledge/chunk-settings">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="chunk-fields">
+      <label>
+        <span>{{ t('切块模式', 'Chunk mode') }}</span>
+        <select name="chunk_mode" required>
+          <option value="structure" {% if current_chunk_mode == 'structure' %}selected{% endif %}>{{ t('结构优先（推荐）', 'Structure-first (recommended)') }}</option>
+          <option value="length" {% if current_chunk_mode == 'length' %}selected{% endif %}>{{ t('字数优先（语义边界）', 'Length-first (semantic boundaries)') }}</option>
+        </select>
+        <small>{{ t('当前设置：', 'Current setting:') }}<strong>{{ current_chunk_mode_label }}</strong></small>
+      </label>
+      <label>
+        <span>{{ t('目标字符数', 'Target characters') }}</span>
+        <input type="number" name="chunk_target_chars" min="1" step="1" required value="{{ current_chunk_target }}">
+        <small>{{ t('当前设置：', 'Current setting:') }}<strong>{{ current_chunk_target }} {{ t('字符', 'chars') }}</strong></small>
+      </label>
+      <label>
+        <span>{{ t('最大字符数', 'Maximum characters') }}</span>
+        <input type="number" name="chunk_max_chars" min="1" step="1" required value="{{ current_chunk_max }}">
+        <small>{{ t('当前设置：', 'Current setting:') }}<strong>{{ current_chunk_max }} {{ t('字符', 'chars') }}</strong></small>
+      </label>
+      <label>
+        <span>{{ t('重叠字符数', 'Overlap characters') }}</span>
+        <input type="number" name="chunk_overlap_chars" min="0" step="1" required value="{{ current_chunk_overlap }}">
+        <small>{{ t('当前设置：', 'Current setting:') }}<strong>{{ current_chunk_overlap }} {{ t('字符', 'chars') }}{% if chunk_overlap_disabled %}{{ t('（不重叠）', ' (no overlap)') }}{% endif %}</strong></small>
+      </label>
+    </div>
+    <p class="chunk-rebuild-warning"><strong>{{ t('保存后将重新构建分块，不需要重启 Agent。', 'Saving rebuilds existing chunks; the Agent does not need to restart.') }}</strong> {{ t('重建期间旧索引仍可使用；文本可能再次发送到已授权的向量模型服务商，原文件不会被修改。', 'The old index remains available during rebuilding. Text may be sent again to the authorized embedding provider; original files are not modified.') }}</p>
+    <button class="button secondary" type="submit">{{ t('保存并安排重建', 'Save and queue rebuild') }}</button>
+  </form>
+</section>
+{% if snapshot.enabled %}
+<section class="chunk-settings retrieval-settings reveal delay-2">
+  <div class="chunk-settings-copy">
+    <p class="eyebrow"><span>{{ t('检索参数', 'RETRIEVAL') }}</span> / {{ t('查询设置', 'QUERY SETTINGS') }}</p>
+    <h2>{{ t('检索质量设置', 'Retrieval quality') }}</h2>
+    <p class="chunk-settings-description">{{ t('只影响后续查询，不重建索引。', 'Applies to subsequent queries; the index is not rebuilt.') }}</p>
+    <div class="chunk-current-strip" aria-label="{{ t('当前检索设置', 'Current retrieval settings') }}">
+      <span><small>{{ t('向量召回', 'Vector recall') }}</small><strong>{{ current_vector_recall }}</strong></span>
+      <span><small>{{ t('关键词召回', 'Keyword recall') }}</small><strong>{{ current_keyword_recall }}</strong></span>
+      <span><small>{{ t('重排候选', 'Rerank candidates') }}</small><strong>{{ current_rerank_candidates }}</strong></span>
+      <span><small>{{ t('单篇分块上限', 'Chunks per note') }}</small><strong>{{ current_max_chunks }}</strong></span>
+    </div>
+    <p class="retrieval-note">{{ t('流程：向量和关键词先召回，再由重排模型筛选；最终每篇笔记最多保留设定数量的分块。返回内容仍是命中分块，不自动回读全文。', 'Flow: vector and keyword recall first, then reranking; at most the configured number of chunks per note is kept. Results remain matching chunks and do not automatically read back the full note.') }}</p>
+  </div>
+  <form class="chunk-settings-form retrieval-settings-form" method="post" action="/knowledge/retrieval-settings">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="chunk-fields">
+      <label>
+        <span>{{ t('向量召回数量（Top-K，候选数）', 'Vector recall (Top-K)') }}</span>
+        <input type="number" name="vector_recall_limit" min="1" max="100" step="1" required value="{{ current_vector_recall }}">
+        <small>{{ t('当前设置：', 'Current setting:') }}<strong>{{ current_vector_recall }} {{ t('个候选', 'candidates') }}</strong></small>
+      </label>
+      <label>
+        <span>{{ t('关键词召回数量', 'Keyword recall') }}</span>
+        <input type="number" name="keyword_recall_limit" min="1" max="100" step="1" required value="{{ current_keyword_recall }}">
+        <small>{{ t('当前设置：', 'Current setting:') }}<strong>{{ current_keyword_recall }} {{ t('个候选', 'candidates') }}</strong></small>
+      </label>
+      <label>
+        <span>{{ t('重排候选数量（Reranker，重排模型）', 'Reranker candidates') }}</span>
+        <input type="number" name="rerank_candidate_limit" min="1" max="100" step="1" required value="{{ current_rerank_candidates }}">
+        <small>{{ t('当前设置：', 'Current setting:') }}<strong>{{ current_rerank_candidates }} {{ t('个候选', 'candidates') }}</strong></small>
+      </label>
+      <label>
+        <span>{{ t('单篇笔记最多分块数', 'Maximum chunks per note') }}</span>
+        <input type="number" name="max_chunks_per_source_file" min="1" max="10" step="1" required value="{{ current_max_chunks }}">
+        <small>{{ t('当前设置：', 'Current setting:') }}<strong>{{ current_max_chunks }} {{ t('个分块', 'chunks') }}</strong></small>
+      </label>
+    </div>
+    <p class="chunk-rebuild-warning"><strong>{{ t('保存后立即应用，不需要重启 Agent。', 'Applies immediately; the Agent does not need to restart.') }}</strong> {{ t('不会重新切块，也不会重新发送原文到向量模型或重排模型服务。', 'It does not rechunk or resend original text to the Embedding or Reranker service.') }}</p>
+    <button class="button secondary" type="submit">{{ t('保存检索设置', 'Save retrieval settings') }}</button>
+  </form>
+</section>
+
+<section class="retrieval-lab reveal delay-2" id="retrieval-diagnostics">
+  <div class="retrieval-lab-heading">
+    <div>
+      <p class="eyebrow"><span>{{ t('检索测试', 'SEARCH TRACE') }}</span> / {{ t('只读诊断', 'READ-ONLY DIAGNOSTICS') }}</p>
+      <h2>{{ t('看见一次查询如何抵达答案', 'See how a query reaches its answer') }}</h2>
+      <p>{{ t('使用当前正式配置运行同一条检索链路，依次展示关键词召回、向量召回、RRF 融合和重排结果。不会修改索引或保存参数。', 'Run the production retrieval path with the current settings and inspect keyword recall, vector recall, RRF fusion and reranking. The index and settings are not modified.') }}</p>
+    </div>
+    <form class="retrieval-lab-form" method="post" action="/knowledge/diagnostics">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>
+        <span>{{ t('测试查询', 'Test query') }}</span>
+        <textarea name="query" rows="3" required placeholder="{{ t('例如：Keepygaga RAG 为什么使用 LanceDB？', 'For example: Why does Keepygaga RAG use LanceDB?') }}">{{ diagnostic_query }}</textarea>
+      </label>
+      <p>{{ t('查询会发送给当前已授权的 Embedding Provider；进入重排的候选正文会发送给 Reranker。', 'The query is sent to the currently authorized Embedding Provider; rerank candidates are sent to the Reranker.') }}</p>
+      <button class="button primary" type="submit">{{ t('运行检索测试', 'Run retrieval test') }}</button>
+    </form>
+  </div>
+
+  {% if diagnostic_result %}
+  <div class="retrieval-trace">
+    <div class="retrieval-trace-summary">
+      <span><small>{{ t('状态', 'Status') }}</small><strong>{{ diagnostic_result.status }}</strong></span>
+      {% if diagnostic_result.diagnostics is defined %}
+      <span><small>{{ t('总耗时', 'Total time') }}</small><strong>{{ '%.1f' | format(diagnostic_result.diagnostics.total_elapsed_ms) }} ms</strong></span>
+      <span><small>{{ t('最终结果', 'Final results') }}</small><strong>{{ diagnostic_result.diagnostics.final | length }}</strong></span>
+      <span><small>{{ t('实际 FTS 查询', 'FTS expression') }}</small><code>{{ diagnostic_result.diagnostics.lexical_query or '—' }}</code></span>
+      {% endif %}
+    </div>
+
+    {% if diagnostic_result.message is defined %}<p class="retrieval-trace-message">{{ diagnostic_result.message }}</p>{% endif %}
+    {% if diagnostic_result.warnings %}
+    <div class="retrieval-trace-warnings">
+      <strong>{{ t('降级与警告', 'Fallbacks and warnings') }}</strong>
+      {% for warning in diagnostic_result.warnings %}<span>{{ warning }}</span>{% endfor %}
+    </div>
+    {% endif %}
+
+    {% if diagnostic_result.diagnostics is defined %}
+    <div class="retrieval-stage-grid">
+      {% for stage in diagnostic_result.diagnostics.stages %}
+      <article class="retrieval-stage stage-{{ stage.id }}">
+        <header>
+          <span>0{{ loop.index }}</span>
+          <div>
+            <strong>{% if stage.id == 'keyword' %}{{ t('关键词召回', 'Keyword recall') }}{% elif stage.id == 'vector' %}{{ t('向量召回', 'Vector recall') }}{% elif stage.id == 'fusion' %}{{ t('RRF 融合', 'RRF fusion') }}{% else %}{{ t('重排', 'Reranking') }}{% endif %}</strong>
+            <small>{{ stage.count }} {{ t('个候选', 'candidates') }} · {{ '%.1f' | format(stage.elapsed_ms) }} ms</small>
+          </div>
+        </header>
+        <div class="retrieval-candidate-list">
+          {% for candidate in stage.candidates %}
+          <div class="retrieval-candidate">
+            <b>{{ candidate.rank }}</b>
+            <span>
+              <code title="{{ candidate.source }}">{{ candidate.source }}</code>
+              {% if candidate.heading_path %}<small>{{ candidate.heading_path }}</small>{% endif %}
+              <p>{{ candidate.excerpt }}</p>
+            </span>
+            <em>{{ candidate.metric_label }} {{ '%.4f' | format(candidate.metric) }}</em>
+          </div>
+          {% else %}
+          <p class="retrieval-empty">{{ t('这一阶段没有可展示的候选。', 'No candidates to display at this stage.') }}</p>
+          {% endfor %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+
+    <div class="retrieval-final">
+      <div class="retrieval-final-heading">
+        <span>05</span>
+        <div><strong>{{ t('最终返回', 'Final response') }}</strong><small>{{ t('应用单篇笔记分块上限后的结果', 'After applying the per-note chunk limit') }}</small></div>
+      </div>
+      <div class="retrieval-final-grid">
+        {% for candidate in diagnostic_result.diagnostics.final %}
+        <article>
+          <header><b>{{ candidate.rank }}</b><em>{{ '%.4f' | format(candidate.metric) }}</em></header>
+          <code title="{{ candidate.source }}">{{ candidate.source }}</code>
+          {% if candidate.heading_path %}<small>{{ candidate.heading_path }}</small>{% endif %}
+          <p>{{ candidate.excerpt }}</p>
+        </article>
+        {% else %}
+        <p class="retrieval-empty">{{ t('没有最终结果；检查上方阶段与 warning 可定位中断位置。', 'No final results; inspect the stages and warnings above to locate the break.') }}</p>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endif %}
+
+{% if fatal_error %}
+<section class="panel fatal"><h2>{{ t('无法加载知识库', 'Unable to load knowledge') }}</h2><p>{{ fatal_error }}</p></section>
+{% elif not snapshot.enabled %}
+<section class="knowledge-disabled reveal delay-1">
+  <p class="eyebrow"><span>SAFE BY DEFAULT</span> / {{ t('默认关闭', 'DISABLED') }}</p>
+  <h2>{{ t('本地知识库当前已停用', 'The local knowledge backend is disabled') }}</h2>
+  <p>{{ t('当前配置明确关闭了 knowledge.enabled；search 不会伪装成已接入，数据源登记和同步入口也不会执行。', 'The current configuration explicitly disables knowledge.enabled; search is unavailable and source registration or sync cannot run.') }}</p>
+  <code>knowledge.enabled = false</code>
+</section>
+{% else %}
+
+<section class="knowledge-vitals reveal delay-1">
+  <article><span>{{ t('数据源', 'Sources') }}</span><strong>{{ snapshot.sources | length }}</strong><small>{{ t('互不重叠的本地根目录', 'non-overlapping local roots') }}</small></article>
+  <article><span>{{ t('扫描周期', 'Scan interval') }}</span><strong>{{ snapshot.scan_interval_seconds // 60 }}<i> {{ t('分钟', 'min') }}</i></strong><small>{{ t('独立 indexer 负责执行', 'run by the standalone indexer') }}</small></article>
+  <article><span>Embedding</span><strong class="provider-ready">{{ snapshot.provider.embedding.model.split('/')[-1].replace('-', ' ') }}</strong><small>{{ snapshot.provider.embedding.dimensions }}D · {{ snapshot.provider.embedding.api_key_env }} · {{ t('密钥', 'key') }} {{ t('就绪', 'ready') if snapshot.embedding_key_ready else t('缺失', 'missing') }}</small></article>
+  <article><span>Reranker</span><strong class="provider-ready">{{ snapshot.provider.rerank.model.split('/')[-1].replace('-', ' ') }}</strong><small>{{ snapshot.provider.rerank.api_key_env }} · {{ t('密钥', 'key') }} {{ t('就绪', 'ready') if snapshot.rerank_key_ready else t('缺失', 'missing') }}</small></article>
+</section>
+{% if not snapshot.credentials_ready %}<div class="notice error reveal">{{ t('缺少 Provider 凭据；登记、同步和失败重试已阻止。所需环境变量：', 'Provider credentials are missing; registration, sync, and retries are blocked. Required environment variables:') }} <code>{{ snapshot.missing_provider_env | join('、') }}</code></div>{% endif %}
+{% if snapshot.vector_status is defined and snapshot.vector_status != 'ready' %}<div class="notice error reveal">{{ t('LanceDB 向量后端当前不可用；知识库不会显示为 ready，关键词检索和本地索引状态仍保留。', 'The LanceDB vector backend is unavailable; the knowledge backend will not be shown as ready. Keyword and local index state remain visible.') }}{% if snapshot.vector_error %} <code>{{ snapshot.vector_error }}</code>{% endif %}</div>{% endif %}
+
+<section class="source-lab reveal delay-2">
+  <div class="source-lab-copy">
+    <p class="eyebrow"><span>01 / PROBE</span> / {{ t('范围预检', 'SCOPE PREVIEW') }}</p>
+    <h2>{{ t('先计算边界，再允许入库', 'Measure the boundary before indexing') }}</h2>
+    <p>{{ t('只发现 Markdown 与 TXT，不跟随符号链接；隐藏文件与目录、agents-memory、_context-backups 和开发依赖在任意深度硬排除。预检后可逐项决定哪些文件夹或文件生效。', 'Only Markdown and TXT are discovered. Symlinks are not followed; hidden paths, core memory, context backups and development dependencies are always excluded. After previewing, choose exactly which folders or files are active.') }}</p>
+  </div>
+  <form class="source-probe-form" method="post" action="/knowledge/preview">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="directory-picker"><span>{{ t('知识目录', 'Knowledge directory') }}</span>
+      <span class="directory-picker-control">
+        <input name="root" value="{{ root_value or (preview.root if preview else '') }}" placeholder="{{ t('输入或选择目录路径', 'Enter or choose a directory path') }}" spellcheck="false" required data-directory-path>
+        <button class="button ghost" type="button" data-choose-directory>{{ t('选择目录', 'Choose folder') }}</button>
+      </span>
+      <small>{{ t('macOS / Windows 可打开系统窗口；Linux / WSL 没有 zenity 时可直接手输路径，提交前仍会通过安全目录校验。', 'macOS / Windows can open a system dialog. On Linux / WSL without zenity, enter a path directly; the existing safe-root validation still applies.') }}</small>
+    </label>
+    <button class="button secondary" type="submit">{{ t('扫描并估算', 'Scan and estimate') }}</button>
+  </form>
+  {% if preview %}
+  <div class="probe-result">
+    <div><span>{{ t('文件', 'Files') }}</span><strong>{{ preview.files }}</strong></div>
+    <div><span>{{ t('预计分块', 'Estimated chunks') }}</span><strong>{{ preview.estimated_chunks }}</strong></div>
+    <div><span>{{ t('预计 tokens', 'Estimated tokens') }}</span><strong>{{ '{:,}'.format(preview.estimated_tokens) }}</strong></div>
+    <div><span>{{ t('预计 Embedding 成本', 'Estimated embedding cost') }}</span><strong>{{ ('¥' + preview.estimated_cost_cny) if preview.estimated_cost_cny else '—' }}</strong></div>
+    <code>{{ preview.root }}</code>
+    <small class="price-snapshot">{{ t('价格快照', 'Price snapshot') }}：{{ preview.price_as_of or t('未配置，请先核对 provider', 'not configured; verify with provider') }}</small>
+  </div>
+  <form class="source-enroll-form" method="post" action="/knowledge/sources">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="root" value="{{ preview.root }}">
+    <label>{{ t('显示名称', 'Display name') }}<input name="display_name" value="{{ enrollment_form.display_name if enrollment_form else preview.root.split('/')[-1] }}" required></label>
+    <div class="source-enroll-scope">{{ scope_picker(preview.scope) }}</div>
+    {% if preview.scope.truncated %}<p class="notice error">{{ preview.scope.error }} {{ t('请缩小上方预检目录后再登记。', 'Narrow the preview directory before registering this source.') }}</p>{% endif %}
+    <label class="consent-card">
+      <input type="checkbox" name="consent" required {% if enrollment_form and enrollment_form.consent %}checked{% endif %}>
+      <span><strong>{{ t('允许在线模型处理此范围', 'Allow online model processing for this scope') }}</strong><small>{{ t('索引时正文发送给 Embedding provider；查询时查询文本与候选正文发送给 Reranker。更换模型或扩大范围后必须重新确认。', 'Index text is sent to the embedding provider; queries and candidate text are sent to the reranker. Model or scope changes require renewed consent.') }}</small></span>
+    </label>
+    {% if not snapshot.credentials_ready %}<p class="provider-credential-warning">{{ t('缺少 Provider 凭据，不能登记或同步。请先配置：', 'Provider credentials are missing; registration and sync are blocked. Configure:') }} <code>{{ snapshot.missing_provider_env | join('、') }}</code></p>{% endif %}
+    <button class="button primary" type="submit" {% if not snapshot.credentials_ready or preview.scope.truncated %}disabled{% endif %}>{{ t('登记数据源', 'Register source') }}</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="source-ledger reveal delay-2">
+  <div class="ledger-heading">
+    <div><p class="eyebrow"><span>02 / LEDGER</span> / {{ t('数据源账册', 'SOURCE LEDGER') }}</p><h2>{{ t('每个目录，独立失败与恢复', 'Independent failure and recovery per source') }}</h2></div>
+    <div class="indexer-control">
+      <code>keepygaga-rag indexer</code>
+      <span class="indexer-live-status status-{{ status_class('ok' if snapshot.indexer.status == 'running' else 'warning' if snapshot.indexer.status == 'unknown' else 'error') }}"><i></i>{{ indexer_status_label(snapshot.indexer.status, lang) }}</span>
+      {% if indexer_restart_supported %}
+      <form method="post" action="/knowledge/indexer/restart" onsubmit="if (!confirm('{{ t('重启期间当前索引仍可查询；确认重启 indexer？', 'The current index remains searchable during restart. Restart the indexer?') }}')) return false; this.querySelector('button').disabled = true; return true;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button ghost" type="submit">{{ t('重启 Indexer', 'Restart indexer') }}</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  <div class="indexer-observatory">
+    <div class="indexer-observatory-heading"><strong>{{ t('Indexer 实时状态', 'Indexer status') }}</strong><small>{{ snapshot.indexer.message }}</small></div>
+    <div class="indexer-stat-grid">
+      <div><span>{{ t('排队任务', 'Queued') }}</span><strong>{{ snapshot.queue.queued }}</strong></div>
+      <div><span>{{ t('运行任务', 'Running') }}</span><strong>{{ snapshot.queue.running }}</strong></div>
+      <div><span>{{ t('最近运行', 'Recent runs') }}</span><strong>{{ snapshot.recent_runs | length }}</strong></div>
+      <div><span>{{ t('失败文件', 'Failed files') }}</span><strong>{{ snapshot.failed_files | length }}</strong></div>
+    </div>
+    {% if snapshot.queue.jobs %}
+    <div class="indexer-job-list">
+      <strong>{{ t('队列与任务', 'Queue and jobs') }}</strong>
+      {% if snapshot.queue.closed_counts_scope == 'recent_jobs' %}<small>{{ t('已完成/失败数字仅统计最近 ' ~ snapshot.queue.closed_counts_limit ~ ' 条记录。', 'Succeeded/failed counts cover only the latest ' ~ snapshot.queue.closed_counts_limit ~ ' records.') }}</small>{% endif %}
+      {% for job in snapshot.queue.jobs[:8] %}
+      <div class="indexer-job-row status-{{ 'bad' if job.status == 'failed' else 'warn' if job.status == 'queued' else 'good' }}">
+        <span>{{ job_status_label(job.status, lang) }}</span><strong>{{ job.source_name }}</strong><small>{{ format_local_datetime(job.finished_at or job.started_at or job.requested_at) }} · {{ job.reason }}</small>
+        {% if job.error %}<code>{{ job.error }}</code>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if snapshot.recent_runs %}
+    <div class="indexer-job-list">
+      <strong>{{ t('最近同步', 'Recent sync runs') }}</strong>
+      {% for run in snapshot.recent_runs[:8] %}
+      <div class="indexer-job-row status-{{ 'bad' if run.status == 'failed' else 'warn' if run.status == 'running' else 'good' }}">
+        <span>{{ run_status_label(run.status, lang) }}</span><strong>{{ run.source_name }}</strong><small>{{ format_local_datetime(run.started_at) }} · {{ run.indexed_files }} {{ t('个文件已索引', 'files indexed') }} / {{ run.missing_files }} {{ t('个缺失', 'missing') }}</small>
+        {% if run.error %}<code>{{ run.error }}</code>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  <div class="source-stack">
+    {% for source in snapshot.sources %}
+    <article class="source-card status-{{ source.status }}">
+      <div class="source-card-main">
+        <div class="source-status-orbit"><i></i><span>{{ source_status_label(source.status, lang) }}</span></div>
+        <div><h3>{{ source.display_name }}</h3><code>{{ source.absolute_path }}</code></div>
+      </div>
+      <div class="source-metrics">
+        <span><strong>{{ source.stats.files }}</strong>{{ t('文件', 'files') }}</span>
+        <span><strong>{{ source.stats.chunks }}</strong>{{ t('分块', 'chunks') }}</span>
+        <span><strong>{{ source.stats.waiting_stable }}</strong>{{ t('等待稳定', 'stabilizing') }}</span>
+        <span><strong>{{ source.stats.errors }}</strong>{{ t('错误', 'errors') }}</span>
+      </div>
+      <div class="source-timeline">
+        <span>{{ t('上次扫描', 'Last scan') }}<strong>{{ format_local_datetime(source.last_scan_at) }}</strong></span>
+        <span>{{ t('上次成功', 'Last success') }}<strong>{{ format_local_datetime(source.last_success_at) }}</strong></span>
+        <span>{{ t('下次扫描', 'Next scan') }}<strong>{{ format_local_datetime(source.next_scan_at) if source.next_scan_at else ('—' if source.auto_sync else t('自动同步已关闭', 'auto sync off')) }}</strong></span>
+      </div>
+      {% if source.last_error %}<p class="source-error">{{ source.last_error }}</p>{% endif %}
+      {% if source.scope_cleanup_pending %}<p class="source-error">{{ t('范围收缩后的派生数据清理尚未完成；恢复完成前不能同步或重新授权。', 'Derived-data cleanup after narrowing scope is unfinished; sync and renewed consent stay blocked until recovery completes.') }}</p>{% endif %}
+      {% if source.failed_files %}
+      <div class="failed-file-list">
+        <strong>{{ t('失败文件', 'Failed files') }}</strong>
+        {% for file in source.failed_files %}
+        <div class="failed-file-row"><span><code>{{ file.relative_path }}</code><small>{{ file.last_error }}</small></span><form method="post" action="/knowledge/source-files/{{ file.id }}/retry"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button ghost" type="submit" {% if not source.enabled or not source.consent_current or source.scope_cleanup_pending or not snapshot.credentials_ready %}disabled{% endif %}>{{ t('重试', 'Retry') }}</button></form></div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <details class="source-scope-editor">
+        <summary>
+          <span><strong>{{ t('生效范围', 'Active scope') }}</strong><small>{{ source.scope.selected_files }} / {{ source.scope.total_files }} {{ t('个文件', 'files') }}</small></span>
+          <b>{{ t('选择文件夹与文件', 'Choose folders and files') }}</b>
+        </summary>
+        {% if source.scope.truncated %}
+        <p class="scope-note">{{ source.scope.error }} {{ t('为避免把不完整节点保存成范围，请缩小目录后再预检。', 'To avoid saving an incomplete scope, preview a narrower directory before editing.') }}</p>
+        {% else %}
+        <form method="post" action="/knowledge/sources/{{ source.id }}/scope" data-scope-form>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          {{ scope_picker(source.scope) }}
+          <button class="button secondary" type="submit">{{ t('保存生效范围', 'Save active scope') }}</button>
+        </form>
+        {% endif %}
+      </details>
+      {% if not source.consent_current and not source.scope_cleanup_pending %}
+      <form class="renew-consent" method="post" action="/knowledge/sources/{{ source.id }}/consent">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label><input type="checkbox" name="consent" required><span>{{ t('Provider 或模型已变化；重新允许索引正文、查询和候选正文发送到当前在线服务。', 'Provider or model changed. Re-authorize index text, queries and candidate text for the current online service.') }}</span></label>
+        <button class="button secondary" type="submit" {% if not snapshot.credentials_ready %}disabled{% endif %}>{{ t('重新授权', 'Renew consent') }}</button>
+      </form>
+      {% endif %}
+      <div class="source-actions">
+        <form method="post" action="/knowledge/sources/{{ source.id }}/sync"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button primary" type="submit" {% if not source.enabled or not source.consent_current or source.scope_cleanup_pending or not snapshot.credentials_ready %}disabled{% endif %}>{{ t('立即同步', 'Sync now') }}</button></form>
+        <form method="post" action="/knowledge/sources/{{ source.id }}/enabled"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="enabled" value="{{ 'false' if source.enabled else 'true' }}"><button class="button secondary" type="submit">{{ t('暂停', 'Pause') if source.enabled else t('启用', 'Enable') }}</button></form>
+        <form method="post" action="/knowledge/sources/{{ source.id }}/auto-sync"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="enabled" value="{{ 'false' if source.auto_sync else 'true' }}"><button class="button ghost" type="submit">{{ t('关闭自动', 'Auto off') if source.auto_sync else t('开启自动', 'Auto on') }}</button></form>
+        <form method="post" action="/knowledge/sources/{{ source.id }}/remove" onsubmit="return confirm('{{ t('只删除可重建索引，不会删除原文件。确认移除此数据源？', 'Only the rebuildable index is deleted. Remove this source?') }}')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button danger" type="submit">{{ t('移除', 'Remove') }}</button></form>
+      </div>
+    </article>
+    {% else %}
+    <div class="empty-ledger"><strong>{{ t('账册还是空的', 'The ledger is empty') }}</strong><span>{{ t('先在上方预检一个目录。', 'Preview a directory above first.') }}</span></div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

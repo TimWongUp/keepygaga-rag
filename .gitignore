@@ -1,0 +1,16 @@
+.DS_Store
+.env
+.keepygaga/
+.pytest_cache/
+.ruff_cache/
+.venv/
+__pycache__/
+*.egg-info/
+*.py[cod]
+keepygaga.toml
+keepygaga.toml.bak.*
+keepygaga-rag.toml
+keepygaga-rag.toml.bak.*
+# Pre-rename local configuration remains ignored during migration.
+keepygaga-knowledge.toml
+keepygaga-knowledge.toml.bak.*

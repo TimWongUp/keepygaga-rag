@@ -1,0 +1,45 @@
+{% from "_i18n.html" import t with context %}
+<!doctype html>
+<html lang="{{ 'zh-CN' if lang == 'zh' else 'en' }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="theme-color" content="#fff8e9">
+    <title>{% block title %}Keepygaga RAG{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='/favicon.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/dashboard.css') }}?v=20260805-1">
+    <script defer src="{{ url_for('static', path='/dashboard.js') }}?v=20260802-2"></script>
+  </head>
+  <body data-dashboard-auto-close="{{ 'true' if dashboard_auto_close else 'false' }}">
+    <div class="grain" aria-hidden="true"></div>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="{{ t('返回概览', 'Return to overview') }}">
+        <span class="brand-mark" aria-hidden="true">
+          <img src="{{ url_for('static', path='/favicon.svg') }}" alt="">
+        </span>
+        <span>
+          <strong>Keepygaga RAG</strong>
+          <small>LOCAL KNOWLEDGE RETRIEVAL</small>
+        </span>
+      </a>
+      <nav aria-label="{{ t('主导航', 'Main navigation') }}">
+        <a class="{% if page == 'overview' %}active{% endif %}" href="/">{{ t('概览', 'Overview') }}</a>
+        <a class="{% if page == 'knowledge' %}active{% endif %}" href="/knowledge">{{ t('知识库', 'Knowledge') }}</a>
+        <a href="/#guide">{{ t('使用说明', 'Guide') }}</a>
+      </nav>
+      <div class="header-actions">
+        <div class="language-switch" role="group" aria-label="{{ t('语言', 'Language') }}">
+          <a class="{{ 'active' if lang == 'zh' else '' }}" href="/language/zh?next={{ request.url.path }}">中文</a>
+          <a class="{{ 'active' if lang == 'en' else '' }}" href="/language/en?next={{ request.url.path }}">EN</a>
+        </div>
+        <div class="local-seal"><i></i><span>{{ t('本机守护中', 'Local service') }}</span></div>
+      </div>
+    </header>
+    <main>{% block content %}{% endblock %}</main>
+    <footer class="site-footer">
+      <span class="footer-boundary"><svg class="icon" aria-hidden="true"><use href="{{ url_for('static', path='/icons.svg') }}#icon-boundary"></use></svg> {{ t('本地知识检索 · 原文可追溯', 'Local knowledge retrieval · traceable source') }}</span>
+      <span class="footer-local">Keepygaga RAG · {{ t('本机服务', 'Local service') }}</span>
+    </footer>
+  </body>
+</html>

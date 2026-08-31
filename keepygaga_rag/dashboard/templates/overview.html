@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_i18n.html" import t with context %}
+{% block title %}{{ t('系统概览', 'Overview') }} · Keepygaga RAG{% endblock %}
+{% block content %}
+{% set knowledge = health.checks | selectattr('id', 'equalto', 'knowledge') | first %}
+
+<section class="hero reveal">
+  <div class="hero-copy">
+    <p class="eyebrow"><span>KNOWLEDGE NEST</span> / {{ t('知识索引', 'KNOWLEDGE INDEX') }}</p>
+    <h1>{{ t('让散落的文字，', 'Give scattered words') }}<br><em>{{ t('拥有可追溯的坐标。', 'a traceable coordinate.') }}</em></h1>
+    <p class="lede">{{ t('本地 FTS 与向量召回经过 RRF 融合和在线 Reranker 精排；原文件始终是真源。', 'Local FTS and vector recall are fused with RRF and refined by online reranking; original files remain authoritative.') }}</p>
+    <div class="hero-promise" aria-label="{{ t('产品边界', 'Product boundaries') }}">
+      <span><i></i>{{ t('本机索引', 'Local index') }}</span>
+      <span><i></i>{{ t('原文可追溯', 'Traceable source') }}</span>
+      <span><i></i>{{ t('授权后传输', 'Consent gated') }}</span>
+    </div>
+  </div>
+  <div class="hero-companion" aria-label="Keepygaga RAG {{ t('系统状态', 'system status') }}">
+    <div class="logo-halo" aria-hidden="true"><img class="hero-logo" src="{{ url_for('static', path='/favicon.svg') }}" alt=""></div>
+    <div class="hero-status status-{{ status_class(health.status) }}"><span><i></i>{{ t('总体状态', 'SYSTEM STATUS') }}</span><strong>{{ status_label(health.status, lang) }}</strong><small><time datetime="{{ health.generated_at }}">{{ t('检查于', 'Checked') }} {{ format_local_datetime(health.generated_at) }}</time></small></div>
+  </div>
+</section>
+
+<section class="metric-grid reveal delay-1" aria-label="{{ t('功能入口', 'Feature shortcuts') }}">
+  <a class="metric-card knowledge-card" href="/knowledge"><span class="metric-index">01</span><div class="metric-icon" aria-hidden="true"><svg class="icon"><use href="{{ url_for('static', path='/icons.svg') }}#icon-book"></use></svg></div><p>{{ t('知识文件', 'Knowledge files') }}</p><strong>{{ knowledge.details.files if knowledge and knowledge.details.files is defined else '—' }} {{ t('份', 'files') }}</strong><small>{{ knowledge.details.active_chunks if knowledge and knowledge.details.active_chunks is defined else '—' }} {{ t('分块', 'chunks') }}</small></a>
+  <a class="metric-card tool-card" href="#guide"><span class="metric-index">02</span><div class="metric-icon" aria-hidden="true"><svg class="icon"><use href="{{ url_for('static', path='/icons.svg') }}#icon-tools"></use></svg></div><p>{{ t('MCP 工具', 'MCP tool') }}</p><strong>{{ health.tools | length }} {{ t('个', 'tool') }}</strong><small>mcp__keepygaga_rag__search</small></a>
+  <a class="metric-card index-card" href="/knowledge"><span class="metric-index">03</span><div class="metric-icon" aria-hidden="true"><svg class="icon"><use href="{{ url_for('static', path='/icons.svg') }}#icon-index"></use></svg></div><p>{{ t('检索引擎', 'Retrieval engine') }}</p><strong>{{ status_label(knowledge.status if knowledge else 'error', lang) }}</strong><small>FTS · Vector · Reranker</small></a>
+</section>
+
+<section class="panel findings reveal delay-2">
+  <div class="panel-heading"><div><p class="eyebrow"><span>HEALTH</span> / {{ t('系统检查', 'SYSTEM CHECKS') }}</p><h2>{{ t('现在需要做什么', 'What needs attention') }}</h2></div><a class="text-link" href="/knowledge">{{ t('打开知识库', 'Open knowledge') }}</a></div>
+  <div class="finding-list">
+    {% set findings = health.checks | rejectattr('status', 'equalto', 'ok') | list %}
+    {% for check in findings %}<article class="finding-item status-{{ status_class(check.status) }}"><span class="finding-code mono">{{ check_label(check.id, lang) }}</span><div><strong>{{ status_label(check.status, lang) }}</strong><p>{{ check_description(check, lang) }}</p></div></article>
+    {% else %}<div class="all-clear"><span><svg class="icon" aria-hidden="true"><use href="{{ url_for('static', path='/icons.svg') }}#icon-check"></use></svg></span><p><strong>{{ t('目前不用处理', 'Nothing needs attention') }}</strong><br>{{ t('本地知识库已就绪。', 'The local knowledge base is ready.') }}</p></div>{% endfor %}
+  </div>
+</section>
+
+<section class="panel quick-guide reveal delay-3" id="guide">
+  <div class="panel-heading"><div><p class="eyebrow"><span>SEARCH GUIDE</span> / {{ t('使用说明', 'USER GUIDE') }}</p><h2>{{ t('按语义和关键词查找资料', 'Find material by meaning and keyword') }}</h2></div></div>
+  <div class="guide-grid">
+    <article><small>01 · {{ t('登记数据源', 'REGISTER') }}</small><h3>{{ t('先预检，再确认范围', 'Preview and confirm scope') }}</h3><p>{{ t('隐藏路径、核心记忆与上下文备份始终排除。', 'Hidden paths, core memory, and context backups are always excluded.') }}</p></article>
+    <article><small>02 · {{ t('独立索引', 'INDEX') }}</small><h3>{{ t('单写协调器持续同步', 'Single-writer synchronization') }}</h3><p>{{ t('索引可重建，原 Markdown 与 TXT 文件不会被修改。', 'Indexes are rebuildable; source Markdown and TXT files are unchanged.') }}</p></article>
+    <article><small>03 · {{ t('搜索知识', 'SEARCH') }}</small><h3>mcp__keepygaga_rag__search</h3><p>{{ t('Agent 混合检索后应回读命中的原文件。', 'Agents should read matched source files after hybrid retrieval.') }}</p></article>
+  </div>
+</section>
+{% endblock %}

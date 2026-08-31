@@ -1,0 +1,34 @@
+[knowledge]
+enabled = true
+store = ".keepygaga/knowledge-v1"
+table_id = "text_chunks_v1"
+embedding_profile = "example_embedding"
+rerank_profile = "example_reranker"
+scan_interval_seconds = 300
+stability_seconds = 30
+missing_confirmations = 2
+chunk_target_chars = 2400
+chunk_max_chars = 3200
+include_patterns = ["**/*.md", "**/*.txt"]
+exclude_patterns = ["**/.*/**", "**/.obsidian/**", "**/.git/**", "**/.keepygaga/**", "**/.venv/**", "**/node_modules/**"]
+
+[embedding.profiles.example_embedding]
+provider = "openai_compatible"
+base_url = "https://api.example.com/v1"
+api_key_env = "EMBEDDING_API_KEY"
+model = "your-embedding-model"
+dimensions = 1024
+revision = ""
+instruction = ""
+normalization = "l2"
+distance_metric = "cosine"
+preprocessor_version = "text-v1"
+
+[rerank.profiles.example_reranker]
+provider = "api"
+protocol = "cohere_compatible"
+base_url = "https://api.example.com/v1"
+api_key_env = "RERANK_API_KEY"
+model = "your-rerank-model"
+candidate_limit = 20
+timeout_seconds = 60
