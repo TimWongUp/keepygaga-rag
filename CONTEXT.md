@@ -4,6 +4,10 @@ Keepygaga RAG 是面向 Agent 的 local-first Knowledge/RAG 系统。这里定�
 
 ## Language
 
+**Sibling Product**：
+Keepygaga RAG 与核心记忆产品 Keepygaga 的关系；共享产品家族与 Agent Host 接入环境，但各自独立安装、运行、发布和演进。
+_Avoid_: Keepygaga 子模块、内置 Knowledge 后端、彼此的 Python 包依赖
+
 **Source**：
 用户明确登记并授权索引的本地目录或文件边界；原文件始终是真源。
 _Avoid_: 索引、数据库副本

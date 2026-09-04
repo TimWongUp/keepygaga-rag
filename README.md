@@ -2,10 +2,13 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Keepygaga RAG is the independently runnable Knowledge/RAG subproject of
-Keepygaga. It indexes authorized local Markdown and plain-text sources, combines
-SQLite FTS5 and LanceDB vector recall with reciprocal-rank fusion, and applies
-online reranking while preserving traceable source coordinates.
+Keepygaga RAG is an independently installable Knowledge/RAG product in the
+Keepygaga family. It is a sibling of the [Keepygaga](https://github.com/TimWongUp/keepygaga)
+core-memory product: each runs, ships, and evolves independently, and their only
+integration is parallel registration in an Agent host. Keepygaga RAG indexes
+authorized local Markdown and plain-text sources, combines SQLite FTS5 and
+LanceDB vector recall with reciprocal-rank fusion, and applies online reranking
+while preserving traceable source coordinates.
 
 > **Project status: personal software in active development (pre-alpha).** This
 > repository is published for early testing and collaboration. Interfaces, data

@@ -2,7 +2,7 @@
 
 ## Boundary
 
-Keepygaga RAG 负责授权本地 Markdown/TXT source 的登记、扫描、chunk、FTS/vector 派生、table 内混合检索、在线 Rerank、独立 Indexer、Doctor 与 Dashboard。核心记忆格式和 mutation 属于独立 `keepygaga` 仓库；两仓通过 Agent Host 并列注册，不建立 Python 依赖。
+Keepygaga RAG 负责授权本地 Markdown/TXT source 的登记、扫描、chunk、FTS/vector 派生、table 内混合检索、在线 Rerank、独立 Indexer、Doctor 与 Dashboard。它与核心记忆产品 Keepygaga 同属一个产品家族，但两者是独立安装、运行、发布和演进的 sibling 产品。核心记忆格式和 mutation 只属于 `keepygaga` 仓库；两仓仅通过 Agent Host 并列注册，各自拥有配置与存储合同，也不 import、打包或依赖对方的 Python package。
 
 原始 source files 永远是真源。SQLite 与 LanceDB 都是可重建派生层：SQLite 保存 registry、manifest、chunk 正文、四字段 FTS、任务、运行和 generation；LanceDB 保存固定 Embedding identity 下的向量与必要过滤/对账字段。
 

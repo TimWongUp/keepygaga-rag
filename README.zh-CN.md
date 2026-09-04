@@ -2,9 +2,11 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Keepygaga RAG 是从 Keepygaga 拆出的可独立运行 Knowledge/RAG 子项目。
-它索引经用户授权的本地 Markdown 与纯文本资料，通过 SQLite FTS5 和 LanceDB
-向量召回、RRF 融合与在线 Reranker 提供可追溯到原文坐标的混合检索。
+Keepygaga RAG 是 Keepygaga 产品家族中独立安装、运行与发布的 Knowledge/RAG
+产品。它与核心记忆产品 [Keepygaga](https://github.com/TimWongUp/keepygaga)
+是 sibling 关系，只通过 Agent Host 并列注册，各自独立演进。Keepygaga RAG 索引
+经用户授权的本地 Markdown 与纯文本资料，通过 SQLite FTS5 和 LanceDB 向量召回、
+RRF 融合与在线 Reranker 提供可追溯到原文坐标的混合检索。
 
 > **项目状态：开发中的个人软件（Pre-Alpha）。** 本仓库公开用于早期试用与协作，
 > 接口、数据格式和行为可能随时变化；不承诺支持、可用性或向后兼容，Issue 与 PR

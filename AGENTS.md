@@ -2,7 +2,7 @@
 
 ## Scope and authority
 
-- Keepygaga RAG 是独立的本地 Knowledge/RAG 仓库；核心记忆属于 sibling repo `keepygaga`，两者不得建立 Python 运行依赖。
+- Keepygaga RAG 是 Keepygaga 产品家族中独立安装、运行与发布的 Knowledge/RAG sibling 产品；`keepygaga` sibling repo 只负责核心记忆。两者仅由 Agent Host 并列注册，不互相 import、打包或建立运行依赖。
 - 原始 Markdown/TXT source 永远是真源；SQLite、FTS 与 LanceDB 是可重建派生层。当前行为由代码、schema、配置消费代码和测试裁决，运行状态由配置、Doctor、数据库、进程和日志现场裁决。
 - `README.md` 面向首次使用者，不是 agent 默认项目真源。
 
