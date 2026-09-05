@@ -19,7 +19,7 @@ from keepygaga_rag.knowledge.chunking import (
     lexical_fields,
 )
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 FTS_BM25_ARGUMENTS = ", ".join(str(value) for value in FTS_BM25_WEIGHTS)
 
 
@@ -111,6 +111,8 @@ class ChunkRecord:
     embedding_input_hash: str
     filename: str = ""
     fts_fields: tuple[str, str, str, str] | None = None
+    start_line: int | None = None
+    end_line: int | None = None
 
 
 class KnowledgeDB:
@@ -256,6 +258,8 @@ class KnowledgeDB:
                     filename TEXT NOT NULL,
                     content_hash TEXT NOT NULL,
                     embedding_input_hash TEXT NOT NULL,
+                    start_line INTEGER,
+                    end_line INTEGER,
                     created_at TEXT NOT NULL,
                     UNIQUE(source_file_id, generation, ordinal)
                 );
@@ -425,8 +429,24 @@ class KnowledgeDB:
 
     @staticmethod
     def _migrate(connection: sqlite3.Connection, current: int) -> None:
-        if current not in {1, 2, 3, 4, 5, 6}:
+        if current not in {1, 2, 3, 4, 5, 6, 7}:
             raise RuntimeError(f"unsupported knowledge schema version: {current}")
+        chunk_columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(chunks)")
+        }
+        for name in ("start_line", "end_line"):
+            if name not in chunk_columns:
+                connection.execute(f"ALTER TABLE chunks ADD COLUMN {name} INTEGER")
+        if current == 7:
+            connection.execute(
+                "UPDATE source_files SET rechunk_required = 1 "
+                "WHERE active_generation > 0 OR pending_generation IS NOT NULL"
+            )
+            connection.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (SCHEMA_VERSION, utc_now()),
+            )
+            return
         columns = {
             str(row[1])
             for row in connection.execute("PRAGMA table_info(sources)").fetchall()
@@ -1869,6 +1889,8 @@ class KnowledgeDB:
                             chunk.filename or default_filename,
                             chunk.content_hash,
                             chunk.embedding_input_hash,
+                            chunk.start_line,
+                            chunk.end_line,
                             now,
                         )
                     )
@@ -1878,8 +1900,8 @@ class KnowledgeDB:
                     INSERT INTO chunks(
                         chunk_id, source_file_id, generation, ordinal, text,
                         search_text, heading_path, title, filename, content_hash,
-                        embedding_input_hash, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        embedding_input_hash, start_line, end_line, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     chunk_rows,
                 )

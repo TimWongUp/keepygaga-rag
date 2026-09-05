@@ -29,7 +29,7 @@ raw MCP Tool 只有 `search`。MCP 客户端配置约定使用注册 key `keepyg
 
 Phase 1 只有 `text_chunks_v1`：四字段 FTS 与 vector recall 在 table 内经 RRF 融合，再由该 table 的 Reranker 排序，最后按 `source_id + relative_path` 限制同一文件的 chunk 数并返回 `top_k`。授权过滤与 active generation 映射发生在融合前，崩溃遗留向量不可见。
 
-结果返回命中 chunk 与 source provenance，只负责定位；调用方必须读取原文件后才能把内容当作 Authority。Embedding 失败可以降级到 FTS，Reranker 失败可以降级到 table 内 RRF并返回 warning；授权过期不允许降级。
+结果返回命中 chunk、source 路径与索引时的原文起止行（旧 chunk 可为空），只负责定位；调用方必须读取原文件后才能把内容当作 Authority。Embedding 失败可以降级到 FTS，Reranker 失败可以降级到 table 内 RRF并返回 warning；授权过期不允许降级。
 
 ## Dashboard boundary
 

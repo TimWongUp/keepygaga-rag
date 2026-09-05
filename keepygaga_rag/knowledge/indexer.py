@@ -734,6 +734,8 @@ class KnowledgeIndexer:
                     content_hash=item.content_hash,
                     fts_fields=item.fts_fields,
                     embedding_input_hash=item.embedding_input_hash,
+                    start_line=item.start_line,
+                    end_line=item.end_line,
                 )
                 for item in parsed
             ]
