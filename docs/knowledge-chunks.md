@@ -10,7 +10,7 @@
 - parser 按 fenced code、heading 与普通 block 建立结构；超长 block 再按字符边界拆分。
 - `chunk_target_chars` 是跨 heading 合并的软目标，`chunk_max_chars` 是硬上限；`chunk_mode=structure|length` 控制结构优先或长度切分。
 - overlap 默认关闭；调整 target/max/mode/overlap 会标记受影响文件 rechunk，但由独立 Coordinator 消费。
-- 当前不保存 line/character offset；结果可定位 source 与 heading，不能宣称精确原文行。
+- chunk 保存索引时原文件的 `start_line` / `end_line`（从 1 开始、两端包含）；行范围覆盖命中正文，包括 overlap，不把剥离 frontmatter、规范化空行后的行号当作原文行号。只定位到行，不保存字符位置。
 
 ## Identity and generation
 
@@ -21,5 +21,7 @@ SQLite 保存 chunk 正文、FTS、metadata、generation 与 active pointer；La
 ## Retrieval provenance
 
 查询先把 FTS/vector 候选映射到当前授权 source 与 active generation，再做 table 内 RRF、Rerank 和单文件限额。结果正文是命中 chunk，不是全文；需要精确引用、表格或高风险符号时必须回读原文件。
+
+行范围描述索引时的原文件版本；原文件后续编辑可能使位置偏移，调用方仍须回读核对。旧 chunk 的行号返回 `null`，由 Coordinator 迁移并重新切块后补齐；检索字段和 Embedding identity 不变时复用已有向量，查询不额外读取原文件。
 
 精确字段、默认值、schema version 和当前行数以 `keepygaga_rag/knowledge/`、配置、测试和 live SQLite/LanceDB 为准。

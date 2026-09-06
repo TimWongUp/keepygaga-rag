@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from bisect import bisect_right
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,6 +40,8 @@ class TextChunk:
     fts_fields: tuple[str, str, str, str]
     embedding_text: str
     embedding_input_hash: str
+    start_line: int
+    end_line: int
 
 
 @dataclass(frozen=True)
@@ -47,6 +50,7 @@ class _ChunkUnit:
     text: str
     paragraph_id: int
     separator_before: str
+    offset: int
     force_split: bool = False
 
 
@@ -56,6 +60,7 @@ class _ChunkDraft:
     text: str
     first_paragraph_id: int
     last_paragraph_id: int
+    offset: int
 
 
 def sha256_text(value: str) -> str:
@@ -66,10 +71,22 @@ def filename_for_path(value: str | Path) -> str:
     return Path(value).name
 
 
-def normalize_text(value: str) -> str:
-    value = value.replace("\r\n", "\n").replace("\r", "\n")
-    value = "\n".join(line.rstrip() for line in value.splitlines())
-    return re.sub(r"\n{3,}", "\n\n", value).strip()
+def _normalized_source(value: str) -> tuple[str, list[int]]:
+    original = value.removeprefix("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+    body = strip_frontmatter(original)
+    first_line = original.count("\n", 0, len(original) - len(body)) + 1
+    lines: list[str] = []
+    original_lines: list[int] = []
+    for number, line in enumerate(body.splitlines(), first_line):
+        line = line.rstrip()
+        if not line and (not lines or not lines[-1]):
+            continue
+        lines.append(line if lines else line.lstrip())
+        original_lines.append(number)
+    if lines and not lines[-1]:
+        lines.pop()
+        original_lines.pop()
+    return "\n".join(lines), original_lines
 
 
 def strip_frontmatter(value: str) -> str:
@@ -295,20 +312,31 @@ def _split_oversized(block: str, max_chars: int) -> list[str]:
     return parts
 
 
-def _blocks(value: str) -> list[tuple[str, str]]:
+def _blocks(value: str) -> list[tuple[str, str, int]]:
     headings: list[str] = []
-    blocks: list[tuple[str, str]] = []
+    blocks: list[tuple[str, str, int]] = []
+    offset = 0
+    block_offset = 0
     current: list[str] = []
     in_fence = False
 
     def flush() -> None:
         if current:
-            text = "\n".join(current).strip()
+            raw_text = "\n".join(current)
+            text = raw_text.strip()
             if text:
-                blocks.append((" > ".join(headings), text))
+                blocks.append(
+                    (
+                        " > ".join(headings),
+                        text,
+                        block_offset + len(raw_text) - len(raw_text.lstrip()),
+                    )
+                )
             current.clear()
 
     for line in value.splitlines():
+        line_offset = offset
+        offset += len(line) + 1
         heading = HEADING.match(line) if not in_fence else None
         if heading is not None:
             flush()
@@ -321,6 +349,8 @@ def _blocks(value: str) -> list[tuple[str, str]]:
         if not line.strip() and not in_fence:
             flush()
         else:
+            if not current:
+                block_offset = line_offset
             current.append(line)
     flush()
     return blocks
@@ -331,6 +361,7 @@ def _units_for_block(
     block: str,
     *,
     paragraph_id: int,
+    offset: int,
     separator_before: str,
     chunk_mode: str,
     max_chars: int,
@@ -354,6 +385,7 @@ def _units_for_block(
                     heading_path=heading_path,
                     text=piece,
                     paragraph_id=paragraph_id,
+                    offset=offset,
                     separator_before=before,
                     force_split=True,
                 )
@@ -364,9 +396,11 @@ def _units_for_block(
                     heading_path=heading_path,
                     text=piece,
                     paragraph_id=paragraph_id,
+                    offset=offset,
                     separator_before=before,
                 )
             )
+        offset += len(piece)
     return units
 
 
@@ -379,6 +413,7 @@ def _chunk_drafts(
 ) -> list[_ChunkDraft]:
     drafts: list[_ChunkDraft] = []
     current_text = ""
+    current_offset = 0
     current_heading = ""
     current_first_paragraph: int | None = None
     current_last_paragraph: int | None = None
@@ -397,6 +432,7 @@ def _chunk_drafts(
                     text=current_text,
                     first_paragraph_id=current_first_paragraph,
                     last_paragraph_id=current_last_paragraph,
+                    offset=current_offset,
                 )
             )
         current_text = ""
@@ -421,6 +457,7 @@ def _chunk_drafts(
         return previous.text[-overlap_chars:], True
 
     def start_unit(unit: _ChunkUnit) -> None:
+        nonlocal current_offset
         nonlocal current_text
         nonlocal current_heading
         nonlocal current_first_paragraph
@@ -439,6 +476,7 @@ def _chunk_drafts(
         if len(prefix) + len(separator) + len(unit.text) > max_chars:
             prefix = ""
             separator = ""
+        current_offset = unit.offset - len(prefix) - len(separator)
         current_text = f"{prefix}{separator}{unit.text}"
         current_heading = unit.heading_path
         current_first_paragraph = unit.paragraph_id
@@ -477,6 +515,7 @@ def _chunk_drafts(
                     text=f"{prefix}{separator}{piece}",
                     first_paragraph_id=unit.paragraph_id,
                     last_paragraph_id=unit.paragraph_id,
+                    offset=unit.offset + position - len(prefix) - len(separator),
                 )
             )
             position += len(piece)
@@ -543,38 +582,58 @@ def chunk_text(
         raise ValueError("overlap_chars must be a non-negative integer")
     if overlap_chars >= max_chars:
         raise ValueError("overlap_chars must be less than max_chars")
-    normalized = normalize_text(strip_frontmatter(value))
+    normalized, original_lines = _normalized_source(value)
     if not normalized:
         return []
     raw_blocks = _blocks(normalized)
     title = source_path.stem
-    for heading_path, _ in raw_blocks:
+    for heading_path, _, _ in raw_blocks:
         if heading_path:
             title = heading_path.split(" > ", 1)[0]
             break
 
-    fallback_without_heading = not any(
-        heading_path for heading_path, _ in raw_blocks
-    ) and len(raw_blocks) == 1
+    fallback_without_heading = (
+        not any(heading_path for heading_path, _, _ in raw_blocks)
+        and len(raw_blocks) == 1
+    )
     units: list[_ChunkUnit] = []
-    for paragraph_id, (heading_path, raw_block) in enumerate(raw_blocks):
+    # Offsets in joined block text map back to the normalized source below.
+    block_offsets: list[int] = []
+    offset = 0
+    for paragraph_id, (heading_path, raw_block, _) in enumerate(raw_blocks):
+        block_offsets.append(offset)
         units.extend(
             _units_for_block(
                 heading_path,
                 raw_block,
                 paragraph_id=paragraph_id,
+                offset=offset,
                 separator_before="\n\n" if paragraph_id else "",
                 chunk_mode=chunk_mode,
                 max_chars=max_chars,
                 fallback_without_heading=fallback_without_heading,
             )
         )
+        offset += len(raw_block) + 2
     grouped = _chunk_drafts(
         units,
         target_chars=target_chars,
         max_chars=max_chars,
         overlap_chars=overlap_chars,
     )
+
+    line_offsets: list[int] = []
+    offset = 0
+    for line in normalized.splitlines(keepends=True):
+        line_offsets.append(offset)
+        offset += len(line)
+
+    def source_line(position: int) -> int:
+        block_index = bisect_right(block_offsets, position) - 1
+        source_offset = (
+            raw_blocks[block_index][2] + position - block_offsets[block_index]
+        )
+        return original_lines[bisect_right(line_offsets, source_offset) - 1]
 
     chunks: list[TextChunk] = []
     filename = filename_for_path(source_path)
@@ -610,6 +669,10 @@ def chunk_text(
                 fts_fields=fts_fields,
                 embedding_text=embedding_text,
                 embedding_input_hash=input_hash,
+                start_line=source_line(
+                    draft.offset + (len(text) - len(text.lstrip()) if text.strip() else 0)
+                ),
+                end_line=source_line(draft.offset + (len(text.rstrip()) or len(text)) - 1),
             )
         )
     return chunks

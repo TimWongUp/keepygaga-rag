@@ -774,7 +774,7 @@ def test_readonly_policy_failure_is_closed_but_reranker_failure_falls_back(
     groups = fallback["groups"]
     assert isinstance(groups, list)
     results = groups[0]["results"]
-    assert set(results[0]) == {"source", "heading_path", "text", "score"}
+    assert set(results[0]) == {"source", "heading_path", "text", "score", "start_line", "end_line"}
     assert failing_reranker.calls == [[
         "Title: Note\nFilename: note.md\nText:\nalpha body"
     ]]
@@ -805,12 +805,7 @@ def test_readonly_policy_failure_is_closed_but_reranker_failure_falls_back(
     assert invalid["status"] == "ok"
     invalid_groups = invalid["groups"]
     assert isinstance(invalid_groups, list)
-    assert set(invalid_groups[0]["results"][0]) == {
-        "source",
-        "heading_path",
-        "text",
-        "score",
-    }
+    assert set(invalid_groups[0]["results"][0]) == set(results[0])
     invalid_warnings = invalid["warnings"]
     assert isinstance(invalid_warnings, list)
     assert any(

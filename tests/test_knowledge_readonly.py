@@ -231,6 +231,8 @@ def test_knowledge_search_reads_older_schema_without_migrating(
     with sqlite3.connect(runtime.database.path) as connection:
         connection.execute("DROP TABLE chunks_fts")
         connection.execute("ALTER TABLE chunks DROP COLUMN filename")
+        connection.execute("ALTER TABLE chunks DROP COLUMN start_line")
+        connection.execute("ALTER TABLE chunks DROP COLUMN end_line")
         connection.execute(
             """
             CREATE VIRTUAL TABLE chunks_fts USING fts5(
@@ -262,6 +264,9 @@ def test_knowledge_search_reads_older_schema_without_migrating(
     assert cast(list[dict[str, object]], groups[0]["results"])[0]["text"] == (
         "alpha legacy body"
     )
+    legacy_result = cast(list[dict[str, object]], groups[0]["results"])[0]
+    assert legacy_result["start_line"] is None
+    assert legacy_result["end_line"] is None
     assert read_schema_version(runtime.database.path) == SCHEMA_VERSION - 1
     assert _sqlite_snapshot(runtime.database.path) == before
 
@@ -475,7 +480,7 @@ def test_schema_v1_migrates_scope_cleanup_and_vector_queue(
         version = connection.execute(
             "SELECT MAX(version) FROM schema_migrations"
         ).fetchone()[0]
-    assert version == 7
+    assert version == SCHEMA_VERSION
     assert "scope_cleanup_pending" in source_columns
     assert {"source_id", "scope_cleanup"} <= vector_columns
 
@@ -591,7 +596,7 @@ def test_schema_v3_migrates_exact_vector_table_registry(
         version = connection.execute(
             "SELECT MAX(version) FROM schema_migrations"
         ).fetchone()[0]
-    assert version == 7
+    assert version == SCHEMA_VERSION
 
 
 def test_schema_v4_migrates_rechunk_flag_and_readonly_falls_back(
@@ -645,7 +650,7 @@ def test_schema_v4_migrates_rechunk_flag_and_readonly_falls_back(
             "SELECT MAX(version) FROM schema_migrations"
         ).fetchone()[0]
     assert "rechunk_required" in columns
-    assert version == 7
+    assert version == SCHEMA_VERSION
 
 
 def test_schema_v5_migrates_chunk_settings_defaults_to_v7(
@@ -694,7 +699,7 @@ def test_schema_v5_migrates_chunk_settings_defaults_to_v7(
         ).fetchone()[0]
     assert {"chunk_mode", "overlap_chars"} <= columns
     assert settings == (123, 456, "structure", 0)
-    assert version == 7
+    assert version == SCHEMA_VERSION
 
 
 def test_schema_v6_rebuilds_four_field_fts_and_marks_vectors_stale(
@@ -790,7 +795,7 @@ def test_schema_v6_rebuilds_four_field_fts_and_marks_vectors_stale(
     assert {"text", "title", "heading_path", "filename"} <= fts_columns
     assert row == ("guide.md", "textonly")
     assert source_file == (1,)
-    assert version == 7
+    assert version == SCHEMA_VERSION
     for query in ("TextOnly", "TitleOnly", "HeadingOnly", "guide"):
         assert database.fts_search(fts_query(query), limit=1)[0][
             "chunk_id"

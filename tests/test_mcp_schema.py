@@ -95,6 +95,8 @@ def test_search_returns_typed_structured_output(monkeypatch) -> None:
                             "source": "/tmp/source.md",
                             "heading_path": "Heading",
                             "text": "matched text",
+                            "start_line": 4,
+                            "end_line": 6,
                             "score": 0.9,
                         }
                     ],
@@ -119,6 +121,8 @@ def test_search_returns_typed_structured_output(monkeypatch) -> None:
                         "source": "/tmp/source.md",
                         "heading_path": "Heading",
                         "text": "matched text",
+                        "start_line": 4,
+                        "end_line": 6,
                         "score": 0.9,
                     }
                 ],

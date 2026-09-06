@@ -1882,7 +1882,7 @@ def test_dashboard_writable_current_schema_does_not_add_history_indexes(
             """
         )
         connection.commit()
-    assert read_schema_version(database_path) == 7
+    assert read_schema_version(database_path) == 8
 
     with sqlite3.connect(database_path) as connection:
         before = {

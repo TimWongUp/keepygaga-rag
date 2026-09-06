@@ -33,7 +33,19 @@ class SearchResultItem(BaseModel):
     source: str = Field(description="Absolute path to the source file")
     heading_path: str = Field(description="Heading hierarchy containing the chunk")
     text: str = Field(description="Matched source text")
-    score: float = Field(description="Reranker score, or RRF score when reranking degraded")
+    start_line: int | None = Field(
+        default=None,
+        ge=1,
+        description="1-based first source line at indexing time; null for older chunks",
+    )
+    end_line: int | None = Field(
+        default=None,
+        ge=1,
+        description="Inclusive last source line at indexing time; null for older chunks",
+    )
+    score: float = Field(
+        description="Reranker score, or RRF score when reranking degraded"
+    )
 
 
 class SearchResultGroup(BaseModel):
@@ -125,7 +137,7 @@ def search(
     """
     Search ordinary local knowledge with hybrid FTS and vector recall, reciprocal
     rank fusion, and online reranking. Results are grouped by text table and include
-    source paths, headings, chunk text, and scores.
+    source paths, headings, chunk text, scores, and indexed source line ranges.
 
     This tool never searches core Agent memory or context-backup trees, even when
     either appears below a configured source root. Indexing text is sent to the
@@ -139,7 +151,8 @@ def search(
         source_ids: Optional source filters, at most 20.
 
     Results locate candidate source material. Read the returned source file before
-    treating a match as authoritative.
+    treating a match as authoritative. Line ranges describe the indexed version;
+    subsequent source edits can shift them.
     """
     try:
         result = run_search(

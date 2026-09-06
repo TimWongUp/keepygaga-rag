@@ -80,6 +80,44 @@ class FakeReranker:
         ]
 
 
+def test_chunk_line_ranges_preserve_original_layout() -> None:
+    value = (
+        "\ufeff---\r\ntitle: ignored\r\n---\r\n\r\n# Same\r\n\r\n"
+        "repeat\r\nrepeat\r\n\r\n\r\n\r\n# Same\r\n\r\n"
+        "repeat\r\nrepeat\r\n\r\n```txt\r\n# not a heading\r\n"
+        "\r\n\r\nrepeat\r\n```\r\n"
+    )
+    chunks = chunk_text(
+        value, source_path=Path("note.md"), target_chars=12, max_chars=18,
+        overlap_chars=4, embedding_identity="fake",
+    )
+    assert [(c.text, c.start_line, c.end_line) for c in chunks] == [
+        ("repeat\nrepeat", 7, 8),
+        ("repeat\nrepeat", 14, 15),
+        ("```txt\n# not a hea", 17, 18),
+        (" heading\n\nrepeat\n`", 18, 22),
+        ("at\n```", 21, 22),
+    ]
+
+
+def test_chunk_line_ranges_cover_merged_paragraphs_and_sentence_overlap() -> None:
+    chunks = chunk_text(
+        "\n# Title\n\nfirst  \n\n\nsecond\n", source_path=Path("note.md"),
+        target_chars=100, max_chars=100, embedding_identity="fake",
+    )
+    assert [(c.text, c.start_line, c.end_line) for c in chunks] == [
+        ("first\n\nsecond", 4, 7),
+    ]
+    chunks = chunk_text(
+        "First.\nSecond.\nThird.", source_path=Path("note.txt"),
+        target_chars=6, max_chars=12, overlap_chars=3,
+        chunk_mode="length", embedding_identity="fake",
+    )
+    assert [(c.text, c.start_line, c.end_line) for c in chunks] == [
+        ("First.", 1, 1), ("st.\nSecond.", 1, 2), ("nd.\nThird.", 2, 3),
+    ]
+
+
 def test_frontmatter_strips_bom_and_crlf_markdown_delimiters(
     tmp_path: Path,
 ) -> None:
@@ -776,6 +814,41 @@ def test_indexer_rechunks_unchanged_active_file_when_explicitly_marked(
     assert not after.rechunk_required
 
 
+def test_v7_line_backfill_reuses_vectors_and_keeps_last_good(tmp_path: Path) -> None:
+    database, _, embedding, indexer, consent = build_indexer(tmp_path)
+    root = tmp_path / "source"
+    root.mkdir()
+    (root / "note.md").write_text("# Title\n\nalpha body", encoding="utf-8")
+    source = database.add_source(
+        display_name="Source", absolute_path=str(root),
+        include_patterns=["**/*.md"], exclude_patterns=[], consent_identity=consent,
+    )
+    indexer.sync_source(source)
+    with database.connect() as connection:
+        connection.execute("ALTER TABLE chunks DROP COLUMN start_line")
+        connection.execute("ALTER TABLE chunks DROP COLUMN end_line")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 8")
+        connection.execute(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES (7, 'now')"
+        )
+    indexer.database = database = KnowledgeDB(database.path)
+    record = database.list_source_files(source.id)[0]
+    assert record.active_generation == 1
+    assert record.rechunk_required
+    rows = database.active_chunks_for_vector_rebuild()
+    assert rows[0]["start_line"] is None
+    embedding.calls.clear()
+
+    result = indexer.sync_source(source)
+
+    assert embedding.calls == []
+    assert result["reused_vectors"] == 1
+    assert result["embedded_vectors"] == 0
+    rows = database.active_chunks_for_vector_rebuild()
+    assert [(r["start_line"], r["end_line"]) for r in rows] == [(3, 3)]
+    assert database.list_source_files(source.id)[0].active_generation == 2
+
+
 def test_chunk_settings_job_is_consumed_with_new_chunk_limits(
     tmp_path: Path,
 ) -> None:
@@ -1095,7 +1168,15 @@ def test_hybrid_search_returns_grouped_traceable_results(tmp_path: Path) -> None
     assert isinstance(groups, list)
     assert groups[0]["table"] == "text_chunks_v1"
     row = groups[0]["results"][0]
-    assert set(row) == {"source", "heading_path", "text", "score"}
+    assert set(row) == {
+        "source",
+        "heading_path",
+        "text",
+        "score",
+        "start_line",
+        "end_line",
+    }
+    assert (row["start_line"], row["end_line"]) == (3, 3)
     assert row["source"].endswith("alpha.md")
     assert row["heading_path"] == "Alpha handbook"
     assert row["text"].startswith("alpha calibration")

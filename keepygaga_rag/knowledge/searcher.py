@@ -681,6 +681,8 @@ class KnowledgeSearcher:
             "source": str(source),
             "heading_path": str(chunk["heading_path"]),
             "text": str(chunk["text"]),
+            "start_line": chunk.get("start_line"),
+            "end_line": chunk.get("end_line"),
             "score": rerank_score
             if rerank_score is not None
             else score["rrf_score"],
