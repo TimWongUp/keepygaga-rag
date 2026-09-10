@@ -21,6 +21,7 @@ Keepygaga RAG 负责授权本地 Markdown/TXT source 的登记、扫描、chunk�
 - 新 generation 的 chunk/FTS/vector 全部就绪后，才能在 SQLite transaction 中切换 active generation；失败保留 last-good。
 - source/file 删除和 generation 切换先持久化待删 vector ID；Coordinator 恢复删除并清理 inactive generation。
 - 只有独立 `keepygaga-rag indexer` 进程在单实例锁内执行可写 schema、队列和派生恢复。Dashboard 与 MCP 查询进程不启动扫描器。
+- 普通 source 同步与查询共同持有授权保护的共享侧，允许查询在 pending generation 构建期间继续读取 active generation；授权、范围和 source 状态变更持有独占侧，必须等待正在进行的 Provider 操作结束。
 - schema 未知、缺失识别信息或高于当前代码时，在任何 DDL 前 fail closed；旧 schema 只读查询可走显式兼容路径。
 
 ## Search contract

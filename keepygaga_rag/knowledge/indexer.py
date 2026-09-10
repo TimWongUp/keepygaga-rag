@@ -462,7 +462,8 @@ class KnowledgeIndexer:
             "missing_files": 0,
         }
         try:
-            with self.authorization_guard.acquire_exclusive(timeout=0):
+            self.authorization_guard.ensure_writable()
+            with self.authorization_guard.acquire_readonly():
                 if self.chunk_settings_loader is not None:
                     settings = self.chunk_settings_loader()
                     if settings is not None:
