@@ -10,6 +10,7 @@ from typing import cast
 
 import httpx
 import pytest
+from filelock import FileLock, Timeout
 
 from keepygaga_rag.config import EmbeddingProfileConfig, RerankProfileConfig
 from keepygaga_rag.knowledge.api import knowledge_search
@@ -632,6 +633,43 @@ def build_indexer(
         consent_identity=consent,
     )
     return database, vectors, embedding, indexer, consent
+
+
+def test_unchanged_sync_allows_search_and_blocks_policy_writes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, vectors, _embedding, indexer, consent = build_indexer(tmp_path)
+    root = tmp_path / "source"
+    root.mkdir()
+    (root / "note.md").write_text("alpha", encoding="utf-8")
+    source = database.add_source(
+        display_name="Source",
+        absolute_path=str(root),
+        include_patterns=["**/*.md"],
+        exclude_patterns=[],
+        consent_identity=consent,
+    )
+    indexer.sync_source(source)
+    original_get_vectors = vectors.get_vectors
+    observed = []
+
+    def get_vectors(chunk_ids: Sequence[str]) -> dict[str, list[float]]:
+        with indexer.authorization_guard.acquire_readonly():
+            observed.append(True)
+        with pytest.raises(Timeout), FileLock(
+            tmp_path / "indexer.lock"
+        ).acquire(timeout=0):
+            pass
+        return original_get_vectors(chunk_ids)
+
+    monkeypatch.setattr(vectors, "get_vectors", get_vectors)
+
+    result = indexer.sync_source(database.get_source(source.id) or source)
+
+    assert result["scanned_files"] == 1
+    assert result["indexed_files"] == 0
+    assert observed == [True]
 
 
 def test_scoped_directory_patterns_match_all_markdown_depths_only() -> None:

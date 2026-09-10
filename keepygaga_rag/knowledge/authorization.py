@@ -6,11 +6,87 @@ import os
 import stat
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any, cast
 
 from filelock import FileLock, Timeout, lock_descriptor, unlock_descriptor
 
 _FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 _IS_WINDOWS = os.name == "nt"
+
+if _IS_WINDOWS:  # pragma: win32 cover
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    _LOCKFILE_FAIL_IMMEDIATELY = 0x00000001
+    _ERROR_LOCK_VIOLATION = 33
+    _win_ctypes = cast(Any, ctypes)
+    _win_msvcrt = cast(Any, msvcrt)
+
+    class _Overlapped(ctypes.Structure):
+        _fields_ = (
+            ("Internal", ctypes.c_void_p),
+            ("InternalHigh", ctypes.c_void_p),
+            ("Offset", wintypes.DWORD),
+            ("OffsetHigh", wintypes.DWORD),
+            ("hEvent", wintypes.HANDLE),
+        )
+
+    _kernel32 = _win_ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.LockFileEx.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(_Overlapped),
+    ]
+    _kernel32.LockFileEx.restype = wintypes.BOOL
+    _kernel32.UnlockFileEx.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(_Overlapped),
+    ]
+    _kernel32.UnlockFileEx.restype = wintypes.BOOL
+
+    def _lock_readonly_descriptor(descriptor: int) -> bool:
+        overlapped = _Overlapped()
+        handle = _win_msvcrt.get_osfhandle(descriptor)
+        if _kernel32.LockFileEx(
+            handle,
+            _LOCKFILE_FAIL_IMMEDIATELY,
+            0,
+            1,
+            0,
+            ctypes.byref(overlapped),
+        ):
+            return True
+        error = _win_ctypes.get_last_error()
+        if error == _ERROR_LOCK_VIOLATION:
+            return False
+        raise _win_ctypes.WinError(error)
+
+    def _unlock_readonly_descriptor(descriptor: int) -> None:
+        overlapped = _Overlapped()
+        handle = _win_msvcrt.get_osfhandle(descriptor)
+        if not _kernel32.UnlockFileEx(
+            handle,
+            0,
+            1,
+            0,
+            ctypes.byref(overlapped),
+        ):  # pragma: no cover
+            raise _win_ctypes.WinError(_win_ctypes.get_last_error())
+
+else:
+
+    def _lock_readonly_descriptor(descriptor: int) -> bool:
+        return lock_descriptor(descriptor, blocking=False)
+
+    def _unlock_readonly_descriptor(descriptor: int) -> None:
+        unlock_descriptor(descriptor)
 
 
 class AuthorizationGuardUnavailable(RuntimeError):
@@ -124,7 +200,7 @@ class AuthorizationGuard:
                         "authorization guard changed while opening"
                     )
                 try:
-                    acquired = lock_descriptor(descriptor, blocking=False)
+                    acquired = _lock_readonly_descriptor(descriptor)
                 except OSError as exc:
                     raise AuthorizationGuardUnavailable(
                         "authorization guard cannot be acquired"
@@ -136,7 +212,7 @@ class AuthorizationGuard:
                 try:
                     yield
                 finally:
-                    unlock_descriptor(descriptor)
+                    _unlock_readonly_descriptor(descriptor)
             finally:
                 os.close(descriptor)
             return
