@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from collections.abc import Sequence
 from hashlib import sha256
@@ -7,7 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 import keepygaga_rag.knowledge.authorization as authorization_module
 from keepygaga_rag.config import load_config
@@ -321,7 +322,7 @@ def test_writable_runtime_rejects_existing_database_without_schema(
     assert _sqlite_snapshot(path) == before
 
 
-def test_readonly_guard_uses_existing_filelock_on_windows(
+def test_readonly_guard_uses_descriptor_lock_on_windows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -331,8 +332,7 @@ def test_readonly_guard_uses_existing_filelock_on_windows(
     before = path.read_bytes()
     locked_descriptors: list[int] = []
 
-    def lock_descriptor(descriptor: int, *, blocking: bool) -> bool:
-        assert not blocking
+    def lock_descriptor(descriptor: int) -> bool:
         locked_descriptors.append(descriptor)
         return True
 
@@ -340,8 +340,12 @@ def test_readonly_guard_uses_existing_filelock_on_windows(
         assert descriptor == locked_descriptors[-1]
 
     monkeypatch.setattr(authorization_module, "_IS_WINDOWS", True)
-    monkeypatch.setattr(authorization_module, "lock_descriptor", lock_descriptor)
-    monkeypatch.setattr(authorization_module, "unlock_descriptor", unlock_descriptor)
+    monkeypatch.setattr(
+        authorization_module, "_lock_readonly_descriptor", lock_descriptor
+    )
+    monkeypatch.setattr(
+        authorization_module, "_unlock_readonly_descriptor", unlock_descriptor
+    )
 
     with guard.acquire_exclusive():
         pass
@@ -364,6 +368,21 @@ def test_exclusive_guard_initializes_missing_lock_file(tmp_path: Path) -> None:
 
     with guard.acquire_exclusive():
         assert path.is_file()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="requires Windows byte-range locks")
+def test_windows_readonly_guard_allows_multiple_readers(tmp_path: Path) -> None:
+    path = tmp_path / "indexer.lock"
+    guard = AuthorizationGuard(path)
+    guard.ensure_writable()
+
+    with (
+        guard.acquire_readonly(),
+        guard.acquire_readonly(),
+        pytest.raises(Timeout),
+        FileLock(path).acquire(timeout=0),
+    ):
+        pass
 
 
 def test_readonly_guard_does_not_initialize_missing_lock_file(tmp_path: Path) -> None:
